@@ -1,0 +1,70 @@
+---
+name: Pulumi Deployment
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+env:
+  PULUMI_STACK_NAME: github-pr-${{ github.event.repository.name }}-${{ github.event.number }}
+  DATAROBOT_API_TOKEN: ${{ secrets.DATAROBOT_API_TOKEN }}
+  DATAROBOT_ENDPOINT: ${{ secrets.DATAROBOT_ENDPOINT }}
+  OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+  OPENAI_API_VERSION: ${{ secrets.OPENAI_API_VERSION }}
+  OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
+  OPENAI_API_DEPLOYMENT_ID: ${{ secrets.OPENAI_API_DEPLOYMENT_ID }}
+  PULUMI_ACCESS_TOKEN: ${{ secrets.PULUMI_ACCESS_TOKEN }}
+
+jobs:
+  update:
+    name: pulumi-update-stack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+      - name: Install Pulumi
+        run: |
+          curl -fsSL https://get.pulumi.com | sh
+          echo "$HOME/.pulumi/bin" >> $GITHUB_PATH
+      - name: Setup Project Dependencies
+        run: |
+          command -v uv >/dev/null 2>&1 || curl -LsSf https://astral.sh/uv/install.sh | sh
+          uv venv .venv
+          source .venv/bin/activate
+          uv pip install -r requirements.txt
+      - name: Plan Pulumi Update
+        id: plan_pulumi_update
+        run: |
+          source .venv/bin/activate
+          pulumi stack select --create $PULUMI_STACK_NAME
+          pulumi up --yes
+          # Store JSON output once and parse it for all values
+          PULUMI_OUTPUT=$(pulumi stack output --json)
+          APPLICATION_URL=$(echo "$PULUMI_OUTPUT" | jq -r 'to_entries[] | select(.key | startswith("Data Analyst Application")) | .value')
+          DEPLOYMENT_URL=$(echo "$PULUMI_OUTPUT" | jq -r 'to_entries[] | select(.key | startswith("Generative Analyst Deployment")) | .value')
+          APP_ID=$(echo "$PULUMI_OUTPUT" | jq -r '.DATAROBOT_APPLICATION_ID // empty')
+          LLM_ID=$(echo "$PULUMI_OUTPUT" | jq -r '.LLM_DEPLOYMENT_ID // empty')
+          echo "application_url=${APPLICATION_URL}" >> $GITHUB_OUTPUT
+          echo "deployment_url=${DEPLOYMENT_URL}" >> $GITHUB_OUTPUT
+          echo "app_id=${APP_ID}" >> $GITHUB_OUTPUT
+          echo "llm_id=${LLM_ID}" >> $GITHUB_OUTPUT
+
+      - name: Comment PR with App URL
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          issue-number: ${{ github.event.number }}
+          body: |
+            # 🚀 Your application is ready!
+
+            ### Application Info
+            - **Application URL:** [${{ steps.plan_pulumi_update.outputs.application_url }}](${{ steps.plan_pulumi_update.outputs.application_url }})
+            - **Application ID:** `${{ steps.plan_pulumi_update.outputs.app_id }}`
+
+            ### LLM Deployment
+            - **Deployment URL:** [${{ steps.plan_pulumi_update.outputs.deployment_url }}](${{ steps.plan_pulumi_update.outputs.deployment_url }})
+            - **Deployment ID:** `${{ steps.plan_pulumi_update.outputs.llm_id }}`
+
+            ### Pulumi Stack
+            - **Stack Name:** `${{ env.PULUMI_STACK_NAME }}`
