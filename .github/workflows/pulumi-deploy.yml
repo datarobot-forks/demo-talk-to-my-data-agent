@@ -2,7 +2,7 @@
 name: Pulumi Deployment
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    types: [opened, synchronize]
 
 env:
   PULUMI_STACK_NAME: github-pr-${{ github.event.repository.name }}-${{ github.event.number }}
