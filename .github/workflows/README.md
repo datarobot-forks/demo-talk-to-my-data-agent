@@ -31,7 +31,6 @@ The workflows can be categorized into several groups:
 
 2. **Dependency Management**
    - `python-deps-install-test.yml`
-   - `license-check.yml`
 
 3. **Infrastructure Management**
    - `pulumi-deploy.yml`
